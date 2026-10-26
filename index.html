@@ -2,8 +2,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <style>
 :root{--bg:#0d1f4a;--fg:#fff;--ac:#2f6bff;--sa:env(safe-area-inset-left,0px);--sb:env(safe-area-inset-bottom,0px);--st:env(safe-area-inset-top,0px)}
-html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
-canvas{display:block}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+/* Canvas фиксирован на весь экран: Safari иногда оставляет старый CSS-размер после поворота */
+body>canvas{position:fixed;inset:0;display:block;width:100%;height:100%;z-index:0}
 .ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,31,74,.94);text-align:center;padding:16px;z-index:10}
 .ov h1{margin:0 0 8px;font-size:30px}.ov p{margin:4px 0;opacity:.85;max-width:420px}
 #play{margin-top:16px;padding:14px 44px;font-size:20px;font-weight:700;border:0;border-radius:12px;background:var(--ac);color:#fff}
@@ -19,7 +20,10 @@ canvas{display:block}
 <div class="ov" id="rot"><h1>Поверните телефон</h1><p>Игра работает в горизонтальном режиме.</p></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-const R=new THREE.WebGLRenderer({antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,2));document.body.prepend(R.domElement);
+const R=new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+R.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+R.domElement.setAttribute('aria-label','3D-игра');
+document.body.prepend(R.domElement);
 const S=new THREE.Scene(),SKY=0xa9c4ee;S.background=new THREE.Color(SKY);S.fog=new THREE.Fog(SKY,45,130);
 const C=new THREE.PerspectiveCamera(70,1,.1,250);C.rotation.order='YXZ';
 S.add(new THREE.HemisphereLight(0xffffff,0x7a8aa0,.95));
@@ -171,14 +175,29 @@ const up=e=>{const p=ptr[e.pointerId];if(p&&p.t==='j'){joy.x=joy.y=0;jb.style.di
 addEventListener('pointerup',up);addEventListener('pointercancel',up);
 const hit=(x,z)=>cols.some(b=>x>b[0]-.35&&x<b[2]+.35&&z>b[1]-.35&&z<b[3]+.35);
 function zone(x,z){if(z>32)return'Въезд и КПП';if(x<-17&&z>5)return'Спортплощадка';if(x>3&&z<10)return'Корпус 2, галерея';if(x<-3)return'Корпус 1';return'Двор'}
-let sw=0,sh=0;function resize(){sw=innerWidth;sh=innerHeight;R.setSize(sw,sh);C.aspect=sw/sh;C.updateProjectionMatrix();document.getElementById('rot').style.display=sh>sw?'flex':'none'}
-addEventListener('resize',resize);addEventListener('orientationchange',()=>{resize();setTimeout(resize,150);setTimeout(resize,500)});if(window.visualViewport)visualViewport.addEventListener('resize',resize);resize();
+let sw=0,sh=0;
+function resize(){
+  // На iOS Safari visualViewport может отличаться от innerWidth/innerHeight
+  const vv=window.visualViewport;
+  const w=Math.max(1,Math.round(vv ? vv.width : document.documentElement.clientWidth || window.innerWidth));
+  const h=Math.max(1,Math.round(vv ? vv.height : document.documentElement.clientHeight || window.innerHeight));
+  sw=w; sh=h;
+  // false: не задаём canvas фиксированные CSS-пиксели; его размер контролирует CSS
+  R.setSize(w,h,false);
+  C.aspect=w/h;
+  C.updateProjectionMatrix();
+  document.getElementById('rot').style.display=h>w?'flex':'none';
+}
+addEventListener('resize',resize);
+addEventListener('orientationchange',()=>{resize();setTimeout(resize,150);setTimeout(resize,500);setTimeout(resize,900)});
+if(window.visualViewport)visualViewport.addEventListener('resize',resize);
+resize();
 const fb=document.getElementById('fly'),ub=document.getElementById('upb'),db=document.getElementById('dnb');
 function setFly(v){fly=v;fb.textContent=v?'Идти':'Полёт';ub.style.display=db.style.display=v?'block':'none';vy=0;if(!v){C.position.y=1.7;pitch=0;if(hit(C.position.x,C.position.z))C.position.set(0,1.7,40)}else if(C.position.y<5)C.position.y=8}
 fb.onclick=()=>setFly(!fly);addEventListener('keydown',e=>{if(e.code==='KeyF')setFly(!fly)});
 [[ub,1],[db,-1]].forEach(([b,v])=>{b.onpointerdown=()=>vy=v;b.onpointerup=b.onpointerleave=b.onpointercancel=()=>vy=0});
 let last=performance.now(),zt=0;
-function loop(t){requestAnimationFrame(loop);if(innerWidth!==sw||innerHeight!==sh)resize();const dt=Math.min((t-last)/1000,.05);last=t;
+function loop(t){requestAnimationFrame(loop);if((window.visualViewport ? Math.round(visualViewport.width) : document.documentElement.clientWidth)!==sw || (window.visualViewport ? Math.round(visualViewport.height) : document.documentElement.clientHeight)!==sh)resize();const dt=Math.min((t-last)/1000,.05);last=t;
  let fx=(keys.KeyD?1:0)-(keys.KeyA?1:0)+joy.x,fy=(keys.KeyW?1:0)-(keys.KeyS?1:0)+joy.y;const l=Math.hypot(fx,fy);if(l>1){fx/=l;fy/=l}
  const sp=(fly?14:keys.ShiftLeft?8:4.5)*dt,k=fly?Math.cos(pitch):1,dx=(Math.cos(yaw)*fx-Math.sin(yaw)*fy*k)*sp,dz=(-Math.sin(yaw)*fx-Math.cos(yaw)*fy*k)*sp;
  if(fly){C.position.x+=dx;C.position.z+=dz;C.position.y=Math.max(1,Math.min(80,C.position.y+(Math.sin(pitch)*fy+vy+(keys.Space?1:0)-(keys.KeyC?1:0))*sp))}else{if(!hit(C.position.x+dx,C.position.z))C.position.x+=dx;if(!hit(C.position.x,C.position.z+dz))C.position.z+=dz}
@@ -188,4 +207,3 @@ document.getElementById('play').onclick=()=>{document.getElementById('start').st
  const d=document.documentElement;try{(d.requestFullscreen?d.requestFullscreen():Promise.reject()).then(()=>screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape')).catch(()=>{})}catch(e){}
  requestAnimationFrame(loop)};
 R.render(S,C);
-</script></body></html>
